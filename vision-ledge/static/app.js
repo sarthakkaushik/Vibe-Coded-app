@@ -38,6 +38,7 @@ let allRows = [];
 let currentController = null;
 let isProcessing = false;
 let localPreviewUrls = new Map();
+let pendingPreviewQueue = [];
 
 function normalizeFileKey(value) {
   return String(value || "").trim().replace(/\\/g, "/").toLowerCase();
@@ -53,6 +54,7 @@ function clearLocalPreviewUrls() {
   const urls = new Set(localPreviewUrls.values());
   urls.forEach((url) => URL.revokeObjectURL(url));
   localPreviewUrls = new Map();
+  pendingPreviewQueue = [];
 }
 
 function getLocalPreviewUrl(fileName) {
@@ -65,7 +67,23 @@ function getLocalPreviewUrl(fileName) {
 
 function resolvePreviewUrl(item) {
   if (!item) return "";
-  return item.imageDataUrl || getLocalPreviewUrl(item.row?.file_name || "");
+  return item.imageDataUrl || item.localPreviewUrl || getLocalPreviewUrl(item.row?.file_name || "");
+}
+
+function takeQueuedPreview(fileName) {
+  const fullKey = normalizeFileKey(fileName);
+  const baseKey = normalizeFileKey(getBaseName(fileName));
+
+  let match = pendingPreviewQueue.find((entry) => !entry.consumed && (entry.fullKey === fullKey || entry.baseKey === baseKey));
+  if (!match) {
+    match = pendingPreviewQueue.find((entry) => !entry.consumed);
+  }
+  if (!match) return "";
+
+  match.consumed = true;
+  if (fullKey && !localPreviewUrls.has(fullKey)) localPreviewUrls.set(fullKey, match.url);
+  if (baseKey && !localPreviewUrls.has(baseKey)) localPreviewUrls.set(baseKey, match.url);
+  return match.url;
 }
 
 function switchWorkspace(view) {
@@ -207,7 +225,7 @@ function setActiveSelection(id) {
 
   const selected = allRows.find((item) => item.id === id);
   if (selected) {
-    const localFallback = getLocalPreviewUrl(selected.row.file_name || "");
+    const localFallback = selected.localPreviewUrl || getLocalPreviewUrl(selected.row.file_name || "");
     const primary = selected.imageDataUrl || localFallback;
     const secondary = selected.imageDataUrl && localFallback ? localFallback : "";
     updateImagePreview(primary, selected.row.file_name || "Selected image", secondary);
@@ -264,12 +282,13 @@ function addThumbnail(item) {
   thumbRail.appendChild(button);
 }
 
-function appendLiveRow(row, imageDataUrl, status = "ok") {
+function appendLiveRow(row, imageDataUrl, status = "ok", localPreviewUrl = "") {
   const rowId = `row_${Date.now()}_${allRows.length + 1}`;
   const item = {
     id: rowId,
     row,
     imageDataUrl,
+    localPreviewUrl,
     status,
   };
   allRows.push(item);
@@ -300,7 +319,17 @@ function handleStreamEvent(event) {
     if (event.row) {
       const normalizedRow = { ...event.row };
       if (!normalizedRow.file_name) normalizedRow.file_name = event.file_name || "";
-      appendLiveRow(normalizedRow, event.image_data_url || "", event.status || "ok");
+      let localPreviewUrl = getLocalPreviewUrl(normalizedRow.file_name || "");
+      if (!localPreviewUrl) {
+        localPreviewUrl = takeQueuedPreview(normalizedRow.file_name || event.file_name || "");
+      }
+      if (!event.image_data_url && !localPreviewUrl) {
+        console.warn("Preview binding missing for row", {
+          fileName: normalizedRow.file_name || event.file_name || "",
+          status: event.status || "ok",
+        });
+      }
+      appendLiveRow(normalizedRow, event.image_data_url || "", event.status || "ok", localPreviewUrl);
     }
     return;
   }
@@ -416,8 +445,16 @@ form.addEventListener("submit", async (event) => {
       const relative = file.webkitRelativePath || file.name;
       const objectUrl = URL.createObjectURL(file);
       data.append("files", file, relative);
-      localPreviewUrls.set(normalizeFileKey(relative), objectUrl);
-      localPreviewUrls.set(normalizeFileKey(file.name), objectUrl);
+      const relativeKey = normalizeFileKey(relative);
+      const baseKey = normalizeFileKey(file.name);
+      localPreviewUrls.set(relativeKey, objectUrl);
+      localPreviewUrls.set(baseKey, objectUrl);
+      pendingPreviewQueue.push({
+        fullKey: relativeKey,
+        baseKey,
+        url: objectUrl,
+        consumed: false,
+      });
     }
   }
 
