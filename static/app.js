@@ -37,6 +37,26 @@ let activeRowId = null;
 let allRows = [];
 let currentController = null;
 let isProcessing = false;
+let localPreviewUrls = new Map();
+
+function clearLocalPreviewUrls() {
+  const urls = new Set(localPreviewUrls.values());
+  urls.forEach((url) => URL.revokeObjectURL(url));
+  localPreviewUrls = new Map();
+}
+
+function getLocalPreviewUrl(fileName) {
+  if (!fileName) return "";
+  if (localPreviewUrls.has(fileName)) return localPreviewUrls.get(fileName) || "";
+  const parts = String(fileName).split(/[\\/]/);
+  const baseName = parts[parts.length - 1] || "";
+  return baseName ? localPreviewUrls.get(baseName) || "" : "";
+}
+
+function resolvePreviewUrl(item) {
+  if (!item) return "";
+  return item.imageDataUrl || getLocalPreviewUrl(item.row?.file_name || "");
+}
 
 function switchWorkspace(view) {
   const showProcessing = view === "processing";
@@ -94,18 +114,33 @@ function setProgress(processed, total) {
   }
 }
 
-function updateImagePreview(dataUrl, fileName) {
+function updateImagePreview(dataUrl, fileName, fallbackUrl = "") {
   currentFile.textContent = fileName || "No image selected";
+  sourcePreview.onerror = null;
+
   if (!dataUrl) {
-    sourcePreview.removeAttribute("src");
-    sourcePreview.classList.remove("visible");
-    return;
+    if (!fallbackUrl) {
+      sourcePreview.removeAttribute("src");
+      sourcePreview.classList.remove("visible");
+      return;
+    }
+    dataUrl = fallbackUrl;
   }
+
+  if (fallbackUrl && fallbackUrl !== dataUrl) {
+    sourcePreview.onerror = () => {
+      sourcePreview.onerror = null;
+      sourcePreview.src = fallbackUrl;
+      sourcePreview.classList.add("visible");
+    };
+  }
+
   sourcePreview.src = dataUrl;
   sourcePreview.classList.add("visible");
 }
 
 function resetLiveView() {
+  clearLocalPreviewUrls();
   previewTable.innerHTML = "";
   thumbRail.innerHTML = "";
   tableColumns = [];
@@ -162,7 +197,10 @@ function setActiveSelection(id) {
 
   const selected = allRows.find((item) => item.id === id);
   if (selected) {
-    updateImagePreview(selected.imageDataUrl, selected.row.file_name || "Selected image");
+    const localFallback = getLocalPreviewUrl(selected.row.file_name || "");
+    const primary = selected.imageDataUrl || localFallback;
+    const secondary = selected.imageDataUrl && localFallback ? localFallback : "";
+    updateImagePreview(primary, selected.row.file_name || "Selected image", secondary);
   }
 }
 
@@ -204,10 +242,13 @@ function addThumbnail(item) {
   button.dataset.rowId = item.id;
   button.title = item.row.file_name || "Processed image";
 
-  const img = document.createElement("img");
-  img.src = item.imageDataUrl;
-  img.alt = item.row.file_name || "Processed image";
-  button.appendChild(img);
+  const previewUrl = resolvePreviewUrl(item);
+  if (previewUrl) {
+    const img = document.createElement("img");
+    img.src = previewUrl;
+    img.alt = item.row.file_name || "Processed image";
+    button.appendChild(img);
+  }
 
   button.addEventListener("click", () => setActiveSelection(item.id));
   thumbRail.appendChild(button);
@@ -359,7 +400,10 @@ form.addEventListener("submit", async (event) => {
     const ext = file.name.toLowerCase();
     if (ext.endsWith(".jpg") || ext.endsWith(".jpeg") || ext.endsWith(".png")) {
       const relative = file.webkitRelativePath || file.name;
+      const objectUrl = URL.createObjectURL(file);
       data.append("files", file, relative);
+      localPreviewUrls.set(relative, objectUrl);
+      localPreviewUrls.set(file.name, objectUrl);
     }
   }
 
