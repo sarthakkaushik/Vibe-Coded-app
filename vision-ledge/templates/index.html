@@ -108,7 +108,10 @@
     <section id="result" class="result workspace hidden" aria-live="polite">
       <div class="result-head">
         <p id="live-summary">Live session</p>
-        <a id="download-link" href="#">Download Excel</a>
+        <div class="result-actions">
+          <a id="download-link" href="#" download>Quick Download</a>
+          <button id="save-as-btn" type="button" class="secondary-btn save-as-btn" disabled>Save As...</button>
+        </div>
       </div>
 
       <div class="workspace-tabs" role="tablist" aria-label="Result views">

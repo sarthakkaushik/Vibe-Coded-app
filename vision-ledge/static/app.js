@@ -3,6 +3,7 @@ const statusBox = document.getElementById("status");
 const resultBox = document.getElementById("result");
 const previewTable = document.getElementById("preview-table");
 const downloadLink = document.getElementById("download-link");
+const saveAsBtn = document.getElementById("save-as-btn");
 const liveSummary = document.getElementById("live-summary");
 const ocrMode = document.getElementById("ocr_mode");
 const geminiFields = document.getElementById("gemini-fields");
@@ -39,6 +40,8 @@ let currentController = null;
 let isProcessing = false;
 let localPreviewUrls = new Map();
 let pendingPreviewQueue = [];
+let latestDownloadUrl = "";
+let latestOutputFile = "";
 
 function normalizeFileKey(value) {
   return String(value || "").trim().replace(/\\/g, "/").toLowerCase();
@@ -108,6 +111,20 @@ function setStatus(message, tone = "") {
   statusBox.className = "status";
   if (tone) statusBox.classList.add(tone);
   statusBox.textContent = message;
+}
+
+function setDownloadState(downloadUrl = "", outputFile = "") {
+  latestDownloadUrl = downloadUrl || "";
+  latestOutputFile = outputFile || "";
+  downloadLink.href = latestDownloadUrl || "#";
+  downloadLink.textContent = latestOutputFile ? `Quick Download ${latestOutputFile}` : "Quick Download";
+  downloadLink.toggleAttribute("download", Boolean(latestOutputFile));
+  if (latestOutputFile) {
+    downloadLink.setAttribute("download", latestOutputFile);
+  } else {
+    downloadLink.removeAttribute("download");
+  }
+  if (saveAsBtn) saveAsBtn.disabled = !latestDownloadUrl;
 }
 
 function setProcessingState(processing) {
@@ -184,6 +201,7 @@ function resetLiveView() {
   if (followLatestInput) followLatestInput.checked = true;
   setImagePaneCollapsed(false);
   switchWorkspace("processing");
+  setDownloadState();
 }
 
 function initializeTable(columns) {
@@ -336,8 +354,7 @@ function handleStreamEvent(event) {
 
   if (event.type === "complete") {
     setStatus(`${event.rows} images processed successfully.`, "success");
-    downloadLink.href = event.download_url;
-    downloadLink.textContent = `Download ${event.output_file}`;
+    setDownloadState(event.download_url, event.output_file);
     liveSummary.textContent = "Output ready";
     switchWorkspace("review");
     setProcessingState(false);
@@ -409,6 +426,56 @@ if (toggleImagePaneBtn) {
     setImagePaneCollapsed(willCollapse);
   });
 }
+if (saveAsBtn) {
+  saveAsBtn.addEventListener("click", async () => {
+    if (!latestDownloadUrl) {
+      setStatus("No extracted file is available yet.", "error");
+      return;
+    }
+
+    try {
+      const response = await fetch(latestDownloadUrl);
+      if (!response.ok) throw new Error("Could not fetch output file.");
+      const blob = await response.blob();
+      const suggestedName = latestOutputFile || `extracted_data_${Date.now()}.xlsx`;
+
+      if ("showSaveFilePicker" in window) {
+        const picker = await window.showSaveFilePicker({
+          suggestedName,
+          types: [
+            {
+              description: "Excel Workbook",
+              accept: {
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"],
+              },
+            },
+          ],
+        });
+        const writable = await picker.createWritable();
+        await writable.write(blob);
+        await writable.close();
+        setStatus("Saved successfully to selected location.", "success");
+      } else {
+        const tempUrl = URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        anchor.href = tempUrl;
+        anchor.download = suggestedName;
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        URL.revokeObjectURL(tempUrl);
+        setStatus("Download started. Browser controls destination folder.", "info");
+      }
+    } catch (error) {
+      if (error?.name === "AbortError") return;
+      if (error?.name === "NotAllowedError") {
+        setStatus("Save canceled.", "info");
+        return;
+      }
+      setStatus(`Save failed: ${error.message || "Unknown error"}`, "error");
+    }
+  });
+}
 
 stopBtn.addEventListener("click", () => {
   if (!currentController) return;
@@ -421,6 +488,7 @@ stopBtn.addEventListener("click", () => {
 syncUploadMode();
 setProcessingState(false);
 switchWorkspace("processing");
+setDownloadState();
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
