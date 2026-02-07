@@ -39,6 +39,16 @@ let currentController = null;
 let isProcessing = false;
 let localPreviewUrls = new Map();
 
+function normalizeFileKey(value) {
+  return String(value || "").trim().replace(/\\/g, "/").toLowerCase();
+}
+
+function getBaseName(value) {
+  const normalized = String(value || "").trim().replace(/\\/g, "/");
+  const parts = normalized.split("/");
+  return parts[parts.length - 1] || "";
+}
+
 function clearLocalPreviewUrls() {
   const urls = new Set(localPreviewUrls.values());
   urls.forEach((url) => URL.revokeObjectURL(url));
@@ -47,9 +57,9 @@ function clearLocalPreviewUrls() {
 
 function getLocalPreviewUrl(fileName) {
   if (!fileName) return "";
-  if (localPreviewUrls.has(fileName)) return localPreviewUrls.get(fileName) || "";
-  const parts = String(fileName).split(/[\\/]/);
-  const baseName = parts[parts.length - 1] || "";
+  const normalizedFull = normalizeFileKey(fileName);
+  if (localPreviewUrls.has(normalizedFull)) return localPreviewUrls.get(normalizedFull) || "";
+  const baseName = normalizeFileKey(getBaseName(fileName));
   return baseName ? localPreviewUrls.get(baseName) || "" : "";
 }
 
@@ -287,7 +297,11 @@ function handleStreamEvent(event) {
     setProgress(event.processed || 0, event.total_files || 0);
     setStatus(`Processing ${event.processed}/${event.total_files}: ${event.file_name}`, "info");
     if (processingCurrentFile) processingCurrentFile.textContent = event.file_name || "Processing image...";
-    if (event.row) appendLiveRow(event.row, event.image_data_url || "", event.status || "ok");
+    if (event.row) {
+      const normalizedRow = { ...event.row };
+      if (!normalizedRow.file_name) normalizedRow.file_name = event.file_name || "";
+      appendLiveRow(normalizedRow, event.image_data_url || "", event.status || "ok");
+    }
     return;
   }
 
@@ -402,8 +416,8 @@ form.addEventListener("submit", async (event) => {
       const relative = file.webkitRelativePath || file.name;
       const objectUrl = URL.createObjectURL(file);
       data.append("files", file, relative);
-      localPreviewUrls.set(relative, objectUrl);
-      localPreviewUrls.set(file.name, objectUrl);
+      localPreviewUrls.set(normalizeFileKey(relative), objectUrl);
+      localPreviewUrls.set(normalizeFileKey(file.name), objectUrl);
     }
   }
 
