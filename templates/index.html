@@ -1,0 +1,183 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pooja Database | Precision Extraction</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Sora:wght@500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <div class="ambient-glow ambient-glow-left" aria-hidden="true"></div>
+  <div class="ambient-glow ambient-glow-right" aria-hidden="true"></div>
+
+  <main class="page-shell">
+    <section class="hero-block">
+      <p class="eyebrow">Pooja Database Suite</p>
+      <h1>Image to Excel Extractor</h1>
+      <p class="hero-copy">A precision pipeline for structured data extraction from document images with production-ready spreadsheet output.</p>
+      <div class="hero-metrics">
+        <article>
+          <span class="metric-value">Batch</span>
+          <span class="metric-label">Folder-Level Upload</span>
+        </article>
+        <article>
+          <span class="metric-value">Dual</span>
+          <span class="metric-label">Cloud + Offline OCR</span>
+        </article>
+        <article>
+          <span class="metric-value">Live</span>
+          <span class="metric-label">Preview + Export</span>
+        </article>
+      </div>
+    </section>
+
+    <section class="control-panel">
+      <form id="extract-form">
+        <div class="field-group">
+          <span class="label">Upload mode</span>
+          <div class="upload-mode" role="radiogroup" aria-label="Upload mode">
+            <label class="mode-option">
+              <input type="radio" name="upload_mode" value="folder" checked />
+              <span>Folder</span>
+            </label>
+            <label class="mode-option">
+              <input type="radio" name="upload_mode" value="single" />
+              <span>Single image</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="field-group">
+          <div id="folder-upload-group">
+            <label class="label" for="folder">Select folder</label>
+            <input id="folder" name="files" type="file" webkitdirectory directory multiple required />
+            <p class="hint">Upload a folder containing `.jpg`, `.jpeg`, or `.png` files.</p>
+          </div>
+          <div id="single-upload-group" class="hidden">
+            <label class="label" for="single_image">Select image</label>
+            <input id="single_image" type="file" accept=".jpg,.jpeg,.png,image/jpeg,image/png" />
+            <p class="hint">Upload one `.jpg`, `.jpeg`, or `.png` image.</p>
+          </div>
+        </div>
+
+        <div class="field-group">
+          <label class="label" for="fields_to_extract">Fields to extract</label>
+          <textarea
+            id="fields_to_extract"
+            name="fields_to_extract"
+            rows="4"
+            placeholder="name, date_of_birth, phone_number, address"
+            required
+          ></textarea>
+        </div>
+
+        <div class="grid-2">
+          <div class="field-group">
+            <label class="label" for="ocr_mode">OCR mode</label>
+            <select id="ocr_mode" name="ocr_mode">
+              <option value="gemini" selected>Gemini API (recommended)</option>
+              <option value="local">Local OCR (offline)</option>
+            </select>
+          </div>
+
+          <div id="gemini-fields" class="field-group">
+            <label class="label" for="gemini_api_key">Gemini API key</label>
+            <input id="gemini_api_key" name="gemini_api_key" type="password" placeholder="Paste Gemini API key" />
+          </div>
+        </div>
+
+        <div class="action-row">
+          <button id="submit-btn" type="submit">Extract to Excel</button>
+          <button id="stop-btn" type="button" class="secondary-btn hidden">Stop</button>
+        </div>
+      </form>
+
+      <div id="status" class="status" aria-live="polite"></div>
+      <div class="progress-wrap" aria-hidden="true">
+        <div class="progress-track">
+          <div id="progress-fill" class="progress-fill"></div>
+        </div>
+        <p id="progress-count" class="progress-count">0 / 0 processed</p>
+      </div>
+
+    </section>
+
+    <section id="result" class="result workspace hidden" aria-live="polite">
+      <div class="result-head">
+        <p id="live-summary">Live session</p>
+        <a id="download-link" href="#">Download Excel</a>
+      </div>
+
+      <div class="workspace-tabs" role="tablist" aria-label="Result views">
+        <button id="tab-processing" class="workspace-tab active" type="button" role="tab" aria-selected="true" data-view="processing">
+          Processing
+        </button>
+        <button id="tab-review" class="workspace-tab" type="button" role="tab" aria-selected="false" data-view="review">
+          Review Workspace
+        </button>
+      </div>
+
+      <div id="view-processing" class="workspace-view">
+        <div class="processing-grid">
+          <article class="processing-card">
+            <h3>Pipeline</h3>
+            <p id="processing-overview">Upload configured. Start extraction to begin live indexing.</p>
+          </article>
+          <article class="processing-card">
+            <h3>Current File</h3>
+            <p id="processing-current-file">Waiting for first processed image.</p>
+          </article>
+          <article class="processing-card">
+            <h3>Navigator</h3>
+            <p>Open Review Workspace for full-width table analysis and visual source validation.</p>
+          </article>
+        </div>
+        <div class="processing-actions">
+          <button id="open-review-btn" type="button" class="secondary-btn">Open Review Workspace</button>
+        </div>
+      </div>
+
+      <div id="view-review" class="workspace-view hidden">
+        <div class="ops-toolbar">
+          <input id="table-search" type="search" placeholder="Search extracted values or file names" />
+          <select id="status-filter">
+            <option value="all">All statuses</option>
+            <option value="ok">Successful</option>
+            <option value="error">Errors only</option>
+          </select>
+          <label class="follow-latest-toggle" for="follow-latest">
+            <input id="follow-latest" type="checkbox" checked />
+            <span>Follow latest</span>
+          </label>
+          <p id="live-count" class="live-count">0 records visible</p>
+          <button id="toggle-image-pane" type="button" class="secondary-btn viewer-toggle">Collapse Image</button>
+        </div>
+
+        <div id="review-layout" class="review-layout">
+          <div class="data-pane">
+            <h3>Structured Data (Live)</h3>
+            <div class="table-wrap">
+              <table id="preview-table"></table>
+            </div>
+          </div>
+          <aside id="review-image-pane" class="image-pane">
+            <div class="image-pane-head">
+              <h3>Source Image (Live)</h3>
+              <p id="current-file" class="current-file">No image selected</p>
+            </div>
+            <div class="image-frame">
+              <img id="source-preview" alt="Currently selected source file preview" />
+            </div>
+            <div id="thumb-rail" class="thumb-rail" aria-label="Processed files"></div>
+          </aside>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
